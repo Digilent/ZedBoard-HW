@@ -1,6 +1,6 @@
 # ZedBoard Hardware Repository
 
-## ZedBoard PmodOLEDrgb Demo
+## ZedBoard FMC-Pcam-Adapter Demo
 
 For more information on the ZedBoard, see its [Resource Center](https://reference.digilentinc.com/reference/programmable-logic/ZedBoard/start) on the Digilent Wiki.
 
