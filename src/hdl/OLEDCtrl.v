@@ -100,7 +100,7 @@ reg   [1:0] temp_page=0;
 reg   [6:0] temp_index=0;
 
 reg 	   	oled_dc=1;
-reg 	   	oled_res=1;
+reg 	   	oled_res=0;
 reg 	   	oled_vdd=1;
 reg 	   	oled_vbat=1;
 
@@ -125,7 +125,7 @@ wire  [8:0] pbuf_write_addr;
 reg   [2:0] write_byte_count=0;
 
 wire [15:0] init_operation;
-reg   [3:0] startup_count=0;
+reg   [4:0] startup_count=0;
 reg         iop_state_select=0;
 reg         iop_res_set=0;
 reg         iop_res_val=0;
@@ -134,6 +134,9 @@ reg         iop_vbat_val=0;
 reg         iop_vdd_set=0;
 reg         iop_vdd_val=0;
 reg   [7:0] iop_data=0;
+
+wire sdin_int;
+wire sclk_int;
 
 //non-spi oled control signals
 assign DC   = oled_dc;
@@ -148,8 +151,8 @@ SpiCtrl SPI_CTRL (
     .send_data	(temp_spi_data),
     .send_ready	(temp_spi_done),
     .CS			(CS),
-    .SDO		(SDIN),
-    .SCLK		(SCLK)
+    .SDO		(sdin_int),
+    .SCLK		(sclk_int)
 );
 
 //delay controller to handle N-millisecond waits
@@ -165,6 +168,8 @@ assign pbuf_read_addr = {temp_page, temp_index};
 assign char_lib_addr = {temp_write_ascii, write_byte_count};
 assign pbuf_write_en = (state == ActiveWrite) ? 1'b1 : 1'b0;
 assign pbuf_write_addr = temp_write_base_addr + write_byte_count;
+assign SDIN = (state == BringdownVddOff || state == Idle || ((startup_count == 5'b0 || startup_count == 5'b1) && (state == StartupFetch || state == Startup || state == UtilityDelayWait))) ? 1'b0 : sdin_int;
+assign SCLK = (state == BringdownVddOff || state == Idle || ((startup_count == 5'b0 || startup_count == 5'b1) && (state == StartupFetch || state == Startup || state == UtilityDelayWait))) ? 1'b0 : sclk_int;
 
 //read only memory for character bitmaps
 charLib CHAR_LIB (
@@ -202,31 +207,16 @@ assign toggle_disp_ready = (state == ActiveWait && toggle_disp_start == 1'b0) ? 
 always@(posedge clk)
 	case (state)
 	Idle: begin
+	    startup_count <= 5'b0;
         if (disp_on_start) begin
 //            state    <= StartupVddOn;
-            startup_count <= 'b0;
             state <= StartupFetch;
         end
         disp_is_full <= 1'b0;
     end
     /*
     INITIALIZATION SEQUENCE: (contained in init_sequence.dat)
-    Turn VDD on (active low), delay 1ms
-    Send DisplayOff command (hAE)
-    Turn RES on (active low), delay 1ms
-    Turn RES off (active low), delay 1ms
-    Send ChargePump1 command (h8D)
-    Send ChargePump2 command (h14)
-    Send PreCharge1 command (hD9)
-    Send PreCharge2 command (hF1)
-    Turn VBAT on (active low), delay 100ms
-    Send DispContrast1 command (h81)
-    Send DispContrast2 command (h0F)
-    Send SetSegRemap command (hA0)
-    Send SetScanDirection command (hC0)
-    Send Set Lower Column Address command (hDA)
-    Send Lower Column Address (h00)
-    Send Display On command (hAF)
+    For more information about the startup process lookup init_sequence.coe file
     //*/
     Startup: begin
         oled_dc   <= 1'b0;
@@ -243,7 +233,7 @@ always@(posedge clk)
             temp_spi_data    <= iop_data;
             state            <= UtilitySpiWait;
         end
-        if (startup_count == 4'd15) begin
+        if (startup_count == 5'd19) begin
             //        after_state    <= ActiveWait;
             after_state          <= ActiveUpdatePage;
             after_update_state   <= ActiveWait;
@@ -391,14 +381,15 @@ always@(posedge clk)
         state          <= UtilitySpiWait;
     end
     BringdownVbatOff: begin
-        oled_vbat        <= 1'b0;
+        oled_vbat        <= 1'b1;
         temp_delay_start <= 1'b1;
-        temp_delay_ms    <= 12'd100;
+        temp_delay_ms    <= 12'd3500;
         after_state      <= BringdownVddOff;
         state            <= UtilityDelayWait;
     end
     BringdownVddOff: begin
-        oled_vdd <= 1'b0;
+        oled_res <= 1'b0;
+        oled_vdd <= 1'b1;
         if (disp_on_start == 1'b0)
             state <= Idle;
     end
